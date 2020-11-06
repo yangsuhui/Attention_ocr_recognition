@@ -1,4 +1,4 @@
-attention-ocr.pytorch:Encoder+Decoder+attention model
+attention-ocr:Encoder+Decoder+attention model
 ======================================
 
 This repository implements the the encoder and decoder model with attention model for OCR, the encoder uses CNN+Bi-LSTM, the decoder uses GRU. This repository is modified from https://github.com/meijieru/crnn.pytorch  
@@ -13,7 +13,6 @@ pip install -r requirements.txt
 ```
 
 # Test
-pretrained model coming soon
 
 
 # Train 
@@ -34,11 +33,6 @@ python train.py --trainlist ./data/ch_train.txt --vallist ./data/ch_test.txt
 then you can see in the terminel as follow:
 ![attentionocr](./test_img/md_img/attentionV2.png)
 there uses the decoderV2 model for decoder.
-
-
-# The previous version  
-
-**_git checkout AttentionOcrV1_**
 
 
 # Reference
