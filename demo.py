@@ -77,9 +77,14 @@ if torch.cuda.is_available() and opt.use_gpu:
 
 converter = utils.strLabelConverterForAttention(alphabet)
 
+if opt.mode == '1D':
 #transformer = dataset.resizeNormalize((280, 32))
-transformer = dataset.resizeNormalize((opt.imgW, opt.imgH))
-image = Image.open(opt.img_path).convert('L')
+    transformer = dataset.resizeNormalize((opt.imgW, opt.imgH))
+    image = Image.open(opt.img_path).convert('L')
+else:
+    transformer = dataset.paddingNormalize(opt.imgH, opt.imgW)
+    #image = Image.open(opt.img_path).convert('L')
+    image = Image.open(opt.img_path)
 image = transformer(image)
 if torch.cuda.is_available() and opt.use_gpu:
     image = image.cuda()

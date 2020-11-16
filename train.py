@@ -20,19 +20,19 @@ import src.beam_search as beam_search_sevice
 import models.crnn_lang as crnn
 print(crnn.__name__)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 gpu_device = torch.device("cuda")
 cpu_device = torch.device("cpu")
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--trainlist',  default='./data/train.txt')
-parser.add_argument('--vallist',  default='./data/train.txt')
+parser.add_argument('--trainlist',  default='./data/train_v.txt')
+parser.add_argument('--vallist',  default='./data/test_v.txt')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
-parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
-parser.add_argument('--imgH', type=int, default=320, help='the height of the input image to network')
-parser.add_argument('--imgW', type=int, default=320, help='the width of the input image to network')
+parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
+parser.add_argument('--imgH', type=int, default=420, help='the height of the input image to network')
+parser.add_argument('--imgW', type=int, default=420, help='the width of the input image to network')
 parser.add_argument('--nh', type=int, default=256, help='size of the lstm hidden state')
 parser.add_argument('--niter', type=int, default=500, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.0001, help='learning rate for Critic, default=0.00005')
@@ -41,15 +41,16 @@ parser.add_argument('--cuda', action='store_true', help='enables cuda', default=
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
 parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
-parser.add_argument('--experiment', default='./expr/attention1dcnn_s', help='Where to store samples and models')
+parser.add_argument('--experiment', default='./expr/attention2dcnn_v', help='Where to store samples and models')
 parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
-parser.add_argument('--valInterval', type=int, default=1, help='Interval to be displayed')
-parser.add_argument('--saveInterval', type=int, default=10, help='Interval to be displayed')
+parser.add_argument('--testInterval', type=int, default=1, help='Interval to be displayed')
+parser.add_argument('--saveInterval', type=int, default=20, help='Interval to be displayed')
 parser.add_argument('--adam', default=True, action='store_true', help='Whether to use adam (default is rmsprop)')
 parser.add_argument('--adadelta', action='store_true', help='Whether to use adadelta (default is rmsprop)')
 parser.add_argument('--keep_ratio', action='store_true', help='whether to keep ratio for image resize')
 parser.add_argument('--random_sample', default=True, action='store_true', help='whether to sample the dataset with random sampler')
 parser.add_argument('--teaching_forcing_prob', type=float, default=0.5, help='where to use teach forcing')
+parser.add_argument('--use_beam_search', default=False, action='store_true', help='Whether to use beam search')
 parser.add_argument('--max_width', type=int, default=71, help='the width of the featuremap out from cnn')
 parser.add_argument('--mode', type=str, default='2D', help='the mode of attention')
 opt = parser.parse_args()
@@ -88,7 +89,10 @@ train_loader = torch.utils.data.DataLoader(
     num_workers=int(opt.workers),
     collate_fn=dataset.alignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio))
 
-test_dataset = dataset.listDataset(list_file =opt.vallist, transform=dataset.resizeNormalize((opt.imgW, opt.imgH)))
+if opt.mode == '1D':
+    test_dataset = dataset.listDataset(list_file =opt.vallist, transform=dataset.resizeNormalize((opt.imgW, opt.imgH)))
+else:
+    test_dataset = dataset.listDataset(list_file =opt.vallist, transform=dataset.paddingNormalize(opt.imgH, opt.imgW))
 
 nclass = len(alphabet) + 3          # decoder的时候，需要的类别数,3 for SOS,EOS和blank 
 print('nclass:',nclass)
@@ -135,6 +139,118 @@ if opt.cuda:
 
 # loss averager
 loss_avg = utils.averager()
+
+'''
+1、自己设置lr随着epoch的变化
+lr = 1e-4
+end_lr = 1e-7
+lr_gamma = 0.1
+lr_decay_step = [200,400]
+weight_decay = 5e-4
+warm_up_epoch = 6
+warm_up_lr = lr * lr_gamma
+
+# optimizer = torch.optim.SGD(models.parameters(), lr=config.lr, momentum=0.99)
+optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+if config.checkpoint != '' and not config.restart_training:
+    start_epoch = load_checkpoint(config.checkpoint, model, logger, device, optimizer)
+    start_epoch += 1
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, config.lr_decay_step, gamma=config.lr_gamma,
+                                                        last_epoch=start_epoch)
+else:
+    start_epoch = config.start_epoch
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, config.lr_decay_step, gamma=config.lr_gamma)
+
+# learning rate的warming up操作
+def adjust_learning_rate(optimizer, epoch):
+    """Sets the learning rate
+    # Adapted from PyTorch Imagenet example:
+    # https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    """
+    if epoch < config.warm_up_epoch:
+        lr = 1e-6 + (config.lr - 1e-6) * epoch / (config.warm_up_epoch)
+    else:
+        lr = config.lr * (config.lr_gamma ** (epoch / config.lr_decay_step[0]))
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+    return lr
+
+lr = adjust_learning_rate(optimizer, epoch)
+
+2、设置torch自带的lr的变化
+
+  OPTIMIZER: 'adam'
+  LR: 0.0001
+  WD: 0.0
+  LR_STEP: [10, 20]
+  LR_FACTOR: 0.1
+  MOMENTUM: 0.0
+  NESTEROV: False
+  RMSPROP_ALPHA:
+  RMSPROP_CENTERED:
+
+import torch.optim as optim
+def get_optimizer(config, model):
+
+    optimizer = None
+
+    if config.TRAIN.OPTIMIZER == "sgd":
+        optimizer = optim.SGD(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=config.TRAIN.LR,
+            momentum=config.TRAIN.MOMENTUM,
+            weight_decay=config.TRAIN.WD,
+            nesterov=config.TRAIN.NESTEROV
+        )
+    elif config.TRAIN.OPTIMIZER == "adam":
+        optimizer = optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=config.TRAIN.LR,
+        )
+    elif config.TRAIN.OPTIMIZER == "rmsprop":
+        optimizer = optim.RMSprop(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=config.TRAIN.LR,
+            momentum=config.TRAIN.MOMENTUM,
+            weight_decay=config.TRAIN.WD,
+            # alpha=config.TRAIN.RMSPROP_ALPHA,
+            # centered=config.TRAIN.RMSPROP_CENTERED
+        )
+
+    return optimizer
+
+    last_epoch = config.TRAIN.BEGIN_EPOCH
+    optimizer = utils.get_optimizer(config, model)
+    if isinstance(config.TRAIN.LR_STEP, list):
+        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, config.TRAIN.LR_STEP,
+            config.TRAIN.LR_FACTOR, last_epoch-1
+        )
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, config.TRAIN.LR_STEP,
+            config.TRAIN.LR_FACTOR, last_epoch - 1
+        )
+    
+    lr_scheduler.step()
+    lr = lr_scheduler.get_lr()[0]
+
+'''
+
+'''
+统计模型参数量等信息
+def model_info(model):  # Plots a line-by-line description of a PyTorch model
+    n_p = sum(x.numel() for x in model.parameters())  # number parameters
+    n_g = sum(x.numel() for x in model.parameters() if x.requires_grad)  # number gradients
+    print('\n%5s %50s %9s %12s %20s %12s %12s' % ('layer', 'name', 'gradient', 'parameters', 'shape', 'mu', 'sigma'))
+    for i, (name, p) in enumerate(model.named_parameters()):
+        name = name.replace('module_list.', '')
+        print('%5g %50s %9s %12g %20s %12.3g %12.3g' % (
+            i, name, p.requires_grad, p.numel(), list(p.shape), p.mean(), p.std()))
+    print('Model Summary: %g layers, %g parameters, %g gradients\n' % (i + 1, n_p, n_g))
+'''
 
 # setup optimizer
 if opt.adam:
@@ -286,6 +402,7 @@ def trainBatch(encoder, decoder, criterion, encoder_optimizer, decoder_optimizer
         decoder_input = target_variable[0].cuda()      # 初始化decoder的开始,从0开始输出 (batch 个label的开始SOS:0), 维度batch size
         decoder_hidden = decoder.initHidden(b).cuda()  #维度:(1, batch_size, self.hidden_size)
     else:
+        #print('-----------:',encoder_outputs.size(1))
         bos_onehot = np.zeros((encoder_outputs.size(1), 1), dtype=np.int32)  ##[B,1]
         bos_onehot[:, 0] = cfg.SEQUENCE.BOS_TOKEN  ##0
         decoder_input = torch.tensor(bos_onehot.tolist(), device=gpu_device)   ##列表,[B,1],数字0
@@ -355,7 +472,7 @@ def trainBatch(encoder, decoder, criterion, encoder_optimizer, decoder_optimizer
 
 if __name__ == '__main__':
     t0 = time.time()
-    #val(cfg, encoder, decoder, criterion, 1, dataset=test_dataset, teach_forcing=False, use_beam_search=True, mode=opt.mode) 
+    #val(cfg, encoder, decoder, criterion, 1, dataset=test_dataset, teach_forcing=False, use_beam_search=opt.use_beam_search, mode=opt.mode) 
     for epoch in range(opt.niter):
         train_iter = iter(train_loader)
         i = 0
@@ -379,9 +496,10 @@ if __name__ == '__main__':
                 print('time elapsed %d' % (t1-t0))
                 t0 = time.time()
 
+        if epoch % opt.testInterval == 0:
+            val(cfg, encoder, decoder, criterion, 1, dataset=test_dataset, teach_forcing=False, use_beam_search=opt.use_beam_search, mode=opt.mode)            # batchsize:1
         # do checkpointing
         if epoch % opt.saveInterval == 0:
-            val(cfg, encoder, decoder, criterion, 1, dataset=test_dataset, teach_forcing=False, use_beam_search=False, mode=opt.mode)            # batchsize:1
             torch.save(
                 encoder.state_dict(), '{0}/encoder_{1}.pth'.format(opt.experiment, epoch))
             torch.save(
