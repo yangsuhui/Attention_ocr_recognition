@@ -45,7 +45,7 @@ The following command is used for 2-D mode, the 1-D mode also can used this comm
 ```bash
 python demo.py --encoder ./expr/attention2dcnn_v_res18/encoder_160.pth --decoder ./expr/attention2dcnn_v_res18/decoder_160.pth --imgH 420 --imgW 420 --img_path ./test_img/2dimg/00004747.png --use_beam_search
 ```
-Download the 2-D model([Baidu](https://pan.baidu.com/s/1FEfiajq8zUqI5xtd1RI2GA), password: q8kp) and using the command above，the visulization of attention results gif will be saved in folder of vis.
+Download the 2-D model([Baidu](https://pan.baidu.com/s/1FEfiajq8zUqI5xtd1RI2GA), password: q8kp) and put the model in the foler of ./expr/attention2dcnn_v_res18/, and using the command above，the visulization of attention results gif will be saved in folder of vis.
 ![gif](./vis/00004747_visualization_results.gif)
 ![gif](./vis/00004923_visualization_results.gif)
 ![gif](./vis/00004911_visualization_results.gif)
