@@ -12,7 +12,8 @@ import random
 import numpy as np
 import cv2
 
-with open('./data/char_std_5990.txt') as f:
+#with open('./data/char_std_5990.txt') as f:
+with open('./data/new_complex_simplified_without_space.txt') as f:
     data = f.readlines()
     alphabet = [x.rstrip() for x in data]
     alphabet = ''.join(alphabet)        # python2不加decode的时候会乱码

@@ -182,8 +182,8 @@ class ResNet(nn.Module):
                                        dilate=replace_stride_with_dilation[1])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -237,13 +237,16 @@ class ResNet(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
+        #feat_layer2 = x
         x = self.layer4(x)
+        feat_layer4 = x
+        # x = self.avgpool(x)
+        # feat_avg = x
+        # x = torch.flatten(x, 1)
+        # x = self.fc(x)
 
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-
-        return x
+        return feat_layer4
+        #return x
 
     def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
@@ -261,7 +264,12 @@ def _resnet(
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
-        model.load_state_dict(state_dict)
+
+        encoder_state_dict = model.state_dict()
+        matched_state_dict = {k:v for k,v in state_dict.items() if k in encoder_state_dict.keys()}
+        encoder_state_dict.update(matched_state_dict)
+
+        model.load_state_dict(encoder_state_dict)
     return model
 
 

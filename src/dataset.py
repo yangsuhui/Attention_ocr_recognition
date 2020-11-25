@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 # import lmdb
 import six
 import sys
-from PIL import Image
+from PIL import Image, ImageOps
 import numpy as np
 
 
@@ -34,9 +34,16 @@ class listDataset(Dataset):
         
         try:
             if 'train' in self.list_file:
-                img = Image.open(imgpath).convert('L')
+                ##默认是需要转成L单通道
+                #1D
+                #img = Image.open(imgpath).convert('L')
+                #2D
+                img = Image.open(imgpath)
             else:
-                img = Image.open(imgpath).convert('L')
+                #1D
+                #img = Image.open(imgpath).convert('L')
+                #2D
+                img = Image.open(imgpath)
         except IOError:
             print('imgpath:',imgpath)
             print('Corrupted image for %d' % index)
@@ -65,6 +72,26 @@ class resizeNormalize(object):
         img.sub_(0.5).div_(0.5)
         return img
 
+class paddingNormalize(object):
+
+    def __init__(self, imgh, imgw, padding_value=0):
+        self.imgh = imgh
+        self.imgw = imgw
+        self.padding_value = padding_value
+        self.toTensor = transforms.ToTensor()
+
+    def __call__(self, img):
+
+        w, h = img.size
+        top = int((self.imgh - h)/2)
+        bottom = self.imgh - top -h
+        left = int((self.imgw -w)/2)
+        right = self.imgw - left - w
+        img=ImageOps.expand(img, border=(left,top,right,bottom), fill=self.padding_value)##left,top,right,bottom
+        img = self.toTensor(img)
+        img.sub_(0.5).div_(0.5)
+        #img = img.permute(0,2,1)
+        return img
 
 class randomSequentialSampler(sampler.Sampler):
 
@@ -115,10 +142,18 @@ class alignCollate(object):
             max_ratio = ratios[-1]
             imgW = int(np.floor(max_ratio * imgH))
             imgW = max(imgH * self.min_ratio, imgW)  # assure imgH >= imgW
-
-        transform = resizeNormalize((imgW, imgH))
+        
+        ##1D
+        # transform = resizeNormalize((imgW, imgH))
+        # images = [transform(image) for image in images]
+        
+        ##2D
+        transform = paddingNormalize(imgH, imgW, padding_value=0)
         images = [transform(image) for image in images]
+
         #unsqueeze(0)表示增加第一维，组成batch维度
         images = torch.cat([t.unsqueeze(0) for t in images], 0)
 
         return images, labels
+
+

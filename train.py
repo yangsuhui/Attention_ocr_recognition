@@ -20,7 +20,7 @@ import src.beam_search as beam_search_sevice
 import models.crnn_lang as crnn
 print(crnn.__name__)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 gpu_device = torch.device("cuda")
 cpu_device = torch.device("cpu")

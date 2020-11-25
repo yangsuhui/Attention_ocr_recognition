@@ -8,6 +8,10 @@ import random
 import math
 import numpy as np
 
+import models.encoder_resnet50 as rescnn
+import models.encoder_inception_v4 as inceptioncnn
+import models.fpn_resnet as fpnrescnn
+
 gpu_device = torch.device("cuda")
 cpu_device = torch.device("cpu")
 
@@ -175,37 +179,71 @@ class CNN(nn.Module):
         if self.mode == '1D':
             assert imgH % 16 == 0, 'imgH has to be a multiple of 16'
 
-        self.cnn = nn.Sequential(
-                      nn.Conv2d(nc, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 64x16x50
-                      nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 128x8x25
-                      nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True), # 256x8x25
-                      nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), # 256x4x25
-                      nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True), # 512x4x25
-                      nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), # 512x2x25
-                      nn.Conv2d(512, 512, 2, 1, 0), nn.BatchNorm2d(512), nn.ReLU(True)) # 512x1x25
-        self.rnn = nn.Sequential(
-            BidirectionalLSTM(512, nh, nh),
-            BidirectionalLSTM(nh, nh, nh))
-            
-        if self.cfg.SEQUENCE.TWO_CONV:   ##finetune.yaml设置的true，dim_in设置的256
-            self.seq_encoder = nn.Sequential(nn.Conv2d(dim_in, dim_in, 3, padding=1), nn.ReLU(inplace=True),
-                nn.MaxPool2d(2, stride=2, ceil_mode=True), nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True))
+            self.cnn = nn.Sequential(
+                        nn.Conv2d(nc, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 64x16x50
+                        nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 128x8x25
+                        nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True), # 256x8x25
+                        nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), # 256x4x25
+                        nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True), # 512x4x25
+                        nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), # 512x2x25
+                        nn.Conv2d(512, 512, 2, 1, 0), nn.BatchNorm2d(512), nn.ReLU(True)) # 512x1x25
+
+            self.rnn = nn.Sequential(
+                BidirectionalLSTM(512, nh, nh),
+                BidirectionalLSTM(nh, nh, nh))
+
         else:
-            self.seq_encoder = nn.Sequential(nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True),
-                nn.MaxPool2d(2, stride=2, ceil_mode=True))
 
-        self.rescale = nn.Upsample(size=(16, 64), mode='bilinear', align_corners=False)
+            self.cnn = rescnn.resnet18(pretrained=True)
 
-        ##注意：nn.Embedding输入必须是LongTensor，FloatTensor须通过tensor.long()方法转成LongTensor。
-        self.x_onehot = nn.Embedding(32, 32)    ##初始化词向量，32个词，每个词32维度
-        self.x_onehot.weight.data = torch.eye(32)   ##one-hot形式，对角线是1，其余位置0
-        self.y_onehot = nn.Embedding(8, 8)   ##初始化词向量，8个词，每个词8维度
-        self.y_onehot.weight.data = torch.eye(8)
+            # self.cnn = nn.Sequential(
+            #             nn.Conv2d(nc, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 64x16x50
+            #             nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), # 128x8x25
+            #             nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True), # 256x8x25
+            #             nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (1,2), (1,0)), # 256x4x25
+            #             nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True), # 512x4x25
+            #             nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (1,2), (1,0)), # 512x2x25
+            #             nn.Conv2d(512, 512, 2, 1, 0), nn.BatchNorm2d(512), nn.ReLU(True)) # 512x1x25
+
+            if self.cfg.SEQUENCE.TWO_CONV:   ##finetune.yaml设置的true，dim_in设置的256
+                self.seq_encoder = nn.Sequential(nn.Conv2d(512, dim_in, 3, padding=1), nn.ReLU(inplace=True),
+                    nn.MaxPool2d(2, stride=2, ceil_mode=True), nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True))
+            else:
+                self.seq_encoder = nn.Sequential(nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True),
+                    nn.MaxPool2d(2, stride=2, ceil_mode=True))
+
+            self.rescale = nn.Upsample(size=(64, 16), mode='bilinear', align_corners=False)
+
+            ##注意：nn.Embedding输入必须是LongTensor，FloatTensor须通过tensor.long()方法转成LongTensor。
+            self.x_onehot = nn.Embedding(8, 8)    ##初始化词向量，32个词，每个词32维度
+            self.x_onehot.weight.data = torch.eye(8)   ##one-hot形式，对角线是1，其余位置0
+            self.y_onehot = nn.Embedding(32, 32)   ##初始化词向量，8个词，每个词8维度
+            self.y_onehot.weight.data = torch.eye(32)
+            
+        # self.rnn = nn.Sequential(
+        #     BidirectionalLSTM(512, nh, nh),
+        #     BidirectionalLSTM(nh, nh, nh))
+            
+        # if self.cfg.SEQUENCE.TWO_CONV:   ##finetune.yaml设置的true，dim_in设置的256
+        #     self.seq_encoder = nn.Sequential(nn.Conv2d(512, dim_in, 3, padding=1), nn.ReLU(inplace=True),
+        #         nn.MaxPool2d(2, stride=2, ceil_mode=True), nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True))
+        # else:
+        #     self.seq_encoder = nn.Sequential(nn.Conv2d(dim_in, 256, 3, padding=1), nn.ReLU(inplace=True),
+        #         nn.MaxPool2d(2, stride=2, ceil_mode=True))
+
+        # self.rescale = nn.Upsample(size=(64, 16), mode='bilinear', align_corners=False)
+
+        # ##注意：nn.Embedding输入必须是LongTensor，FloatTensor须通过tensor.long()方法转成LongTensor。
+        # self.x_onehot = nn.Embedding(8, 8)    ##初始化词向量，32个词，每个词32维度
+        # self.x_onehot.weight.data = torch.eye(8)   ##one-hot形式，对角线是1，其余位置0
+        # self.y_onehot = nn.Embedding(32, 32)   ##初始化词向量，8个词，每个词8维度
+        # self.y_onehot.weight.data = torch.eye(32)
 
     def forward(self, input):
         # conv features
         conv = self.cnn(input)
         #print(conv.size())
+
         b, c, h, w = conv.size()
         if self.mode == '1D':
 
@@ -221,7 +259,8 @@ class CNN(nn.Module):
             ##输入的mask head的特征图大小32*128
             rescale_out = self.rescale(conv)   ##[B,256,16,64]，256是特征图的通道数，16和64对应特征图的高和宽
             seq_decoder_input = self.seq_encoder(rescale_out)  ##[B,256,8,32]
-            x_t, y_t = np.meshgrid(np.linspace(0, 31, 32), np.linspace(0, 7, 8))  # (h, w)
+            #print('seq_decoder_input_size:', seq_decoder_input.size())
+            x_t, y_t = np.meshgrid(np.linspace(0, 7, 8), np.linspace(0, 31, 32))  # (w, h)
             ##x_t和y_t对应特征图的每一个特征点的横纵坐标
             x_t = torch.LongTensor(x_t, device=cpu_device).cuda()   ##x_t是8*32维度
             y_t = torch.LongTensor(y_t, device=cpu_device).cuda()   ##y_t是8*32维度
